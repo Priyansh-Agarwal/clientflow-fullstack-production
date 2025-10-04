@@ -1,0 +1,30 @@
+# CLIENTFLOW AI SUITE - VERCEL ENVIRONMENT VARIABLES
+# Copy these to your Vercel Dashboard -> Project Settings -> Environment Variables
+
+# SUPABASE CONFIGURATION (REQUIRED)
+SUPABASE_URL=https://gmpsdeenhdtvbxjungxl.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHNkZWVuaGR0dmJ4anVuZ3hsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTUzMDY2OCwiZXhwIjoyMDc1MTA2NjY4fQ.kIXgTLe10v3gRLtEYfeEJz8dHXZMuWARnUty6wNItHI
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHNkZWVuaGR0dmJ4anVuZ3hsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MzA2NjgsImV4cCI6MjA3NTEwNjY2OH0.C5sWEGKxDuSaD3xsui4YUKgGPhWrOsDQ_C26yJMtkJc
+
+# SERVER CONFIGURATION
+NODE_ENV=production
+PORT=3000
+
+# SECURITY (Generate new secrets for production)
+JWT_SECRET=production_jwt_secret_key_minimum_32_characters_long_secure_random_key_here
+SESSION_SECRET=production_session_secret_key_secure_random_key_here
+
+# CORS CONFIGURATION (Add your domain after deployment)
+CORS_ORIGIN=https://your-domain.vercel.app,http://localhost:3000
+
+# RATE LIMITING
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=1000
+
+# OPTIONAL: EMAIL SERVICE
+SENDGRID_API_KEY=your_sendgrid_api_key_here
+FROM_EMAIL=noreply@clientflow.ai
+FROM_NAME=ClientFlow AI Suite
+
+# OPTIONAL: MONITORING
+SENTRY_DSN=your_sentry_dsn_here
