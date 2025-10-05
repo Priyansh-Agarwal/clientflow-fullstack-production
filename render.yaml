@@ -1,0 +1,14 @@
+# Render Deployment Configuration
+
+# Build Command
+npm run build
+
+# Start Command  
+cd backend && npm start
+
+# Environment Variables
+SUPABASE_URL=https://gmpsdeenhdtvbxjungxl.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHNkZWVuaGR0dmJ4anVuZ3hsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTUzMDY2OCwiZXhwIjoyMDc1MTA2NjY4fQ.kIXgTLe10v3gRLtEYfeEJz8dHXZMuWARnUty6wNItHI
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtcHNkZWVuaGR0dmJ4anVuZ3hsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MzA2NjgsImV4cCI6MjA3NTEwNjY2OH0.8QZqJzJzJzJzJzJzJzJzJzJzJzJzJzJzJzJzJzJzJz
+NODE_ENV=production
+PORT=3000
