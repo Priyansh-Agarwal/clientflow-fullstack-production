@@ -3,23 +3,35 @@
   "name": "clientflow-ai-suite",
   "builds": [
     {
-      "src": "index.js",
+      "src": "api-server/index-production.js",
       "use": "@vercel/node"
     }
   ],
   "functions": {
-    "index.js": {
+    "api-server/index-production.js": {
       "maxDuration": 30
     }
   },
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/index.js"
+      "dest": "/api-server/index-production.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api-server/index-production.js"
+    },
+    {
+      "src": "/test",
+      "dest": "/api-server/index-production.js"
+    },
+    {
+      "src": "/auth/(.*)",
+      "dest": "/api-server/index-production.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/index.js"
+      "dest": "/api-server/index-production.js"
     }
   ],
   "regions": ["iad1"],

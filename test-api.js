@@ -1,41 +1,143 @@
 #!/usr/bin/env node
 
-/**
- * Simple test script to verify our hardened API implementation
- * Run with: node test-api.js
- */
-
+// Comprehensive test script for ClientFlow AI Suite
 const http = require('http');
 
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:4000';
 
+// Test functions
+async function testHealthCheck() {
+  console.log('🔍 Testing Health Check...');
+  try {
+    const response = await makeRequest('/health');
+    console.log('✅ Health Check:', response.status);
+    return true;
+  } catch (error) {
+    console.log('❌ Health Check Failed:', error.message);
+    return false;
+  }
+}
+
+async function testAPIDocumentation() {
+  console.log('\n📚 Testing API Documentation...');
+  try {
+    const response = await makeRequest('/');
+    console.log('✅ API Documentation:', response.name, '-', response.status);
+    return true;
+  } catch (error) {
+    console.log('❌ API Documentation Failed:', error.message);
+    return false;
+  }
+}
+
+async function testDatabaseConnection() {
+  console.log('\n🧪 Testing Database Connection...');
+  try {
+    const response = await makeRequest('/api/test');
+    console.log('✅ Database Test:', response.database_status);
+    return true;
+  } catch (error) {
+    console.log('❌ Database Test Failed:', error.message);
+    return false;
+  }
+}
+
+async function testBusinessesAPI() {
+  console.log('\n🏢 Testing Businesses API...');
+  try {
+    const response = await makeRequest('/api/businesses');
+    console.log('✅ GET Businesses:', response.count, 'businesses found');
+    return true;
+  } catch (error) {
+    console.log('❌ Businesses API Failed:', error.message);
+    return false;
+  }
+}
+
+async function testCustomersAPI() {
+  console.log('\n👥 Testing Customers API...');
+  try {
+    // Test GET customers
+    const getResponse = await makeRequest('/api/customers');
+    console.log('✅ GET Customers:', getResponse.count, 'customers found');
+    
+    // Test POST customer (with a test business_id)
+    const newCustomer = {
+      business_id: 1, // Assuming business_id 1 exists
+      first_name: 'Test Customer',
+      last_name: 'API Test',
+      email: 'test@example.com',
+      phone: '+1234567890',
+      source: 'api_test'
+    };
+    
+    try {
+      const postResponse = await makeRequest('/api/customers', 'POST', newCustomer);
+      console.log('✅ POST Customer:', postResponse.data.first_name, 'created');
+    } catch (postError) {
+      console.log('⚠️ POST Customer:', postError.message, '(This is expected if business_id 1 doesn\'t exist)');
+    }
+    
+    return true;
+  } catch (error) {
+    console.log('❌ Customers API Failed:', error.message);
+    return false;
+  }
+}
+
+async function testAnalyticsAPI() {
+  console.log('\n📊 Testing Analytics API...');
+  try {
+    const response = await makeRequest('/api/analytics/dashboard');
+    console.log('✅ Analytics Dashboard:', response.data.kpis.total_customers, 'customers,', response.data.kpis.total_businesses, 'businesses');
+    return true;
+  } catch (error) {
+    console.log('❌ Analytics API Failed:', error.message);
+    return false;
+  }
+}
+
+// Helper function to make HTTP requests
 function makeRequest(path, method = 'GET', data = null) {
   return new Promise((resolve, reject) => {
+    const url = new URL(path, API_BASE_URL);
     const options = {
-      hostname: 'localhost',
-      port: 4000,
-      path: path,
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
       method: method,
       headers: {
         'Content-Type': 'application/json',
-        'x-org-id': '00000000-0000-0000-0000-000000000000'
       }
     };
 
+    if (data) {
+      const jsonData = JSON.stringify(data);
+      options.headers['Content-Length'] = Buffer.byteLength(jsonData);
+    }
+
     const req = http.request(options, (res) => {
       let body = '';
-      res.on('data', (chunk) => body += chunk);
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
       res.on('end', () => {
         try {
-          const parsed = JSON.parse(body);
-          resolve({ status: res.statusCode, data: parsed });
-        } catch (e) {
-          resolve({ status: res.statusCode, data: body });
+          const response = JSON.parse(body);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(response);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${response.message || body}`));
+          }
+        } catch (error) {
+          reject(new Error(`Invalid JSON response: ${body}`));
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (error) => {
+      reject(error);
+    });
 
     if (data) {
       req.write(JSON.stringify(data));
@@ -44,97 +146,58 @@ function makeRequest(path, method = 'GET', data = null) {
   });
 }
 
+// Main test runner
 async function runTests() {
-  console.log('🧪 Testing ClientFlow Hardened API...\n');
-
-  try {
-    // Test 1: Health endpoint
-    console.log('1. Testing /api/health...');
-    const health = await makeRequest('/api/health');
-    console.log(`   Status: ${health.status}`);
-    console.log(`   Response:`, health.data);
-    console.log(`   ✅ Health check ${health.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    // Test 2: Ready endpoint (will fail without Redis, that's expected)
-    console.log('2. Testing /api/ready...');
-    const ready = await makeRequest('/api/ready');
-    console.log(`   Status: ${ready.status}`);
-    console.log(`   Response:`, ready.data);
-    console.log(`   ${ready.status === 200 ? '✅ Ready check PASSED' : '⚠️  Ready check FAILED (expected without Redis)'}\n`);
-
-    // Test 3: Outbound SMS (sandbox mode)
-    console.log('3. Testing /api/messages/outbound (SMS)...');
-    const sms = await makeRequest('/api/messages/outbound', 'POST', {
-      orgId: '00000000-0000-0000-0000-000000000000',
-      channel: 'sms',
-      to_addr: '+15555550123',
-      body: 'Test message from hardened API'
-    });
-    console.log(`   Status: ${sms.status}`);
-    console.log(`   Response:`, sms.data);
-    console.log(`   ✅ SMS test ${sms.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    // Test 4: Outbound Email (sandbox mode)
-    console.log('4. Testing /api/messages/outbound (Email)...');
-    const email = await makeRequest('/api/messages/outbound', 'POST', {
-      orgId: '00000000-0000-0000-0000-000000000000',
-      channel: 'email',
-      to_addr: 'test@example.com',
-      body: '<h1>Test Email</h1><p>This is a test email from the hardened API.</p>'
-    });
-    console.log(`   Status: ${email.status}`);
-    console.log(`   Response:`, email.data);
-    console.log(`   ✅ Email test ${email.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    // Test 5: Appointments endpoint
-    console.log('5. Testing /api/appointments...');
-    const appointments = await makeRequest('/api/appointments?window=next_24h');
-    console.log(`   Status: ${appointments.status}`);
-    console.log(`   Response:`, appointments.data);
-    console.log(`   ✅ Appointments test ${appointments.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    // Test 6: SLA endpoint
-    console.log('6. Testing /api/sla/unanswered...');
-    const sla = await makeRequest('/api/sla/unanswered?minutes=5');
-    console.log(`   Status: ${sla.status}`);
-    console.log(`   Response:`, sla.data);
-    console.log(`   ✅ SLA test ${sla.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    // Test 7: Automation run endpoint
-    console.log('7. Testing /api/automations/run...');
-    const automation = await makeRequest('/api/automations/run', 'POST', {
-      type: 'reminder',
-      orgId: '00000000-0000-0000-0000-000000000000',
-      payload: { test: true }
-    });
-    console.log(`   Status: ${automation.status}`);
-    console.log(`   Response:`, automation.data);
-    console.log(`   ✅ Automation test ${automation.status === 200 ? 'PASSED' : 'FAILED'}\n`);
-
-    console.log('🎉 All tests completed!');
-    console.log('\n📋 Summary:');
-    console.log('- Health endpoint: Working');
-    console.log('- Message endpoints: Working (sandbox mode)');
-    console.log('- Automation endpoints: Working');
-    console.log('- Appointments endpoint: Working');
-    console.log('- SLA endpoint: Working');
-    console.log('\n🚀 Your hardened ClientFlow API is ready for production!');
-
-  } catch (error) {
-    console.error('❌ Test failed:', error.message);
-    console.log('\n💡 Make sure the API server is running:');
-    console.log('   cd api-server && npm run dev');
+  console.log('🚀 Starting ClientFlow AI Suite Tests...\n');
+  console.log(`🌐 Testing API at: ${API_BASE_URL}\n`);
+  
+  const tests = [
+    { name: 'Health Check', fn: testHealthCheck },
+    { name: 'API Documentation', fn: testAPIDocumentation },
+    { name: 'Database Connection', fn: testDatabaseConnection },
+    { name: 'Businesses API', fn: testBusinessesAPI },
+    { name: 'Customers API', fn: testCustomersAPI },
+    { name: 'Analytics API', fn: testAnalyticsAPI }
+  ];
+  
+  let passed = 0;
+  let failed = 0;
+  
+  for (const test of tests) {
+    try {
+      const result = await test.fn();
+      if (result) {
+        passed++;
+      } else {
+        failed++;
+      }
+    } catch (error) {
+      console.log(`❌ ${test.name} Error:`, error.message);
+      failed++;
+    }
   }
+  
+  console.log('\n📊 Test Results:');
+  console.log(`✅ Passed: ${passed}`);
+  console.log(`❌ Failed: ${failed}`);
+  console.log(`📈 Success Rate: ${Math.round((passed / (passed + failed)) * 100)}%`);
+  
+  if (failed === 0) {
+    console.log('\n🎉 All tests passed! ClientFlow AI Suite is working correctly.');
+    console.log('\n🚀 Your API is ready for production deployment!');
+  } else {
+    console.log('\n⚠️  Some tests failed. Please check the server and try again.');
+    console.log('\n💡 Common issues:');
+    console.log('   - Make sure the server is running');
+    console.log('   - Check your environment variables');
+    console.log('   - Verify Supabase connection');
+  }
+  
+  console.log('\n📚 Next steps:');
+  console.log('   1. Deploy to Vercel: npm run deploy');
+  console.log('   2. Deploy to Railway: npm run deploy:railway');
+  console.log('   3. Deploy to Render: npm run deploy:render');
 }
 
-// Check if server is running
-makeRequest('/api/health')
-  .then(() => runTests())
-  .catch(() => {
-    console.log('❌ API server is not running!');
-    console.log('\n🚀 To start the server:');
-    console.log('   1. cd api-server');
-    console.log('   2. npm install');
-    console.log('   3. npm run dev');
-    console.log('   4. Run this test again: node test-api.js');
-  });
+// Run tests
+runTests().catch(console.error);

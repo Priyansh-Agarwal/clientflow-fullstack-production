@@ -21,15 +21,26 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ Missing required environment variables:');
   console.error('   SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-  process.exit(1);
+  console.error('   Please check your .env file or environment configuration');
+  // Don't exit in production, allow graceful degradation
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('⚠️ Running without database connection - some features will be limited');
+  } else {
+    process.exit(1);
+  }
 }
 
 let supabase = null;
 try {
-  supabase = createClient(supabaseUrl, supabaseKey);
-  console.log('✅ Supabase client initialized successfully');
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('✅ Supabase client initialized successfully');
+  }
 } catch (error) {
   console.error('❌ Supabase initialization failed:', error.message);
+  if (process.env.NODE_ENV !== 'production') {
+    process.exit(1);
+  }
 }
 
 // Security middleware
@@ -49,29 +60,44 @@ app.use(helmet({
 // CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,https://vercel.app').split(',');
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',');
+    
+    // Allow all origins in development or if CORS_ORIGIN is set to *
+    if (process.env.NODE_ENV !== 'production' || allowedOrigins.includes('*')) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn(`⚠️ CORS blocked request from origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'x-org-id'],
 }));
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
   message: {
     success: false,
     error: 'Too many requests',
-    message: 'Please try again later'
+    message: 'Please try again later',
+    retryAfter: '15 minutes'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/test';
+  },
 });
 
 app.use(limiter);
@@ -106,10 +132,34 @@ app.use((req, res, next) => {
 console.log('🔧 Middleware configured successfully');
 
 // === HEALTH CHECK ENDPOINT ===
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   console.log('🏥 Health check requested');
+  
+  let dbStatus = 'Disconnected ❌';
+  let dbError = null;
+  
+  // Test database connection if available
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('businesses')
+        .select('id')
+        .limit(1);
+      
+      if (error) {
+        dbStatus = 'Error ❌';
+        dbError = error.message;
+      } else {
+        dbStatus = 'Connected ✅';
+      }
+    } catch (error) {
+      dbStatus = 'Error ❌';
+      dbError = error.message;
+    }
+  }
+  
   const health = {
-    status: 'OK',
+    status: dbStatus.includes('Connected') ? 'OK' : 'DEGRADED',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: {
@@ -117,12 +167,21 @@ app.get('/health', (req, res) => {
       total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'
     },
     environment: process.env.NODE_ENV || 'development',
-    database: supabase ? 'Connected ✅' : 'Disconnected ❌',
+    database: {
+      status: dbStatus,
+      error: dbError,
+      provider: 'Supabase'
+    },
     version: '1.0.0',
-    port: PORT
+    port: PORT,
+    services: {
+      api: 'UP',
+      database: dbStatus.includes('Connected') ? 'UP' : 'DOWN'
+    }
   };
   
-  res.status(200).json(health);
+  const statusCode = dbStatus.includes('Connected') ? 200 : 503;
+  res.status(statusCode).json(health);
 });
 
 // === API DOCUMENTATION ENDPOINT ===
@@ -139,11 +198,26 @@ app.get('/', (req, res) => {
       businesses: 'GET /api/businesses - List all businesses',
       customers: 'GET /api/customers - List all customers',
       create_customer: 'POST /api/customers - Create new customer',
-      test_db: 'GET /api/test - Database connection test'
+      test_db: 'GET /api/test - Database connection test',
+      analytics: 'GET /api/analytics/dashboard - Analytics dashboard'
     },
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
-    port: PORT
+    port: PORT,
+    features: [
+      'Multi-tenant business management',
+      'Customer relationship tracking',
+      'Supabase-powered database',
+      'Production-ready security',
+      'Rate limiting and abuse protection',
+      'Comprehensive health monitoring',
+      'RESTful API design'
+    ],
+    deployment: {
+      platform: 'Vercel Ready',
+      scaling: 'Auto-scaling',
+      monitoring: 'Built-in health checks'
+    }
   });
 });
 
@@ -157,7 +231,8 @@ app.get('/api/test', async (req, res) => {
         error: 'Supabase client not initialized',
         environment: process.env.NODE_ENV || 'development',
         supabase_url_configured: !!process.env.SUPABASE_URL,
-        supabase_key_configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+        supabase_key_configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        message: 'Please check your environment variables'
       });
     }
 
@@ -193,7 +268,8 @@ app.get('/api/test', async (req, res) => {
         'GET /api/customers - List customers', 
         'GET /api/customers?business_id=X - Filter customers by business',
         'POST /api/customers - Create customer',
-        'GET /api/test - This test endpoint'
+        'GET /api/test - This test endpoint',
+        'GET /api/analytics/dashboard - Analytics dashboard'
       ],
       timestamp: new Date().toISOString(),
       uptime: process.uptime() + ' seconds'
@@ -217,7 +293,8 @@ app.get('/api/businesses', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({
         success: false,
-        error: 'Database service unavailable'
+        error: 'Database service unavailable',
+        message: 'Supabase client not initialized. Please check your environment variables.'
       });
     }
 
@@ -261,7 +338,8 @@ app.get('/api/customers', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({
         success: false,
-        error: 'Database service unavailable'
+        error: 'Database service unavailable',
+        message: 'Supabase client not initialized. Please check your environment variables.'
       });
     }
 
@@ -313,7 +391,8 @@ app.post('/api/customers', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({
         success: false,
-        error: 'Database service unavailable'
+        error: 'Database service unavailable',
+        message: 'Supabase client not initialized. Please check your environment variables.'
       });
     }
 
@@ -325,7 +404,8 @@ app.post('/api/customers', async (req, res) => {
         success: false,
         error: 'Validation failed',
         required: ['business_id', 'first_name'],
-        received: { business_id: !!business_id, first_name: !!first_name }
+        received: { business_id: !!business_id, first_name: !!first_name },
+        message: 'business_id and first_name are required fields'
       });
     }
 
@@ -339,7 +419,8 @@ app.post('/api/customers', async (req, res) => {
     if (businessError || !businessExists) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid business_id - business not found'
+        error: 'Invalid business_id - business not found',
+        message: 'The specified business_id does not exist in the database'
       });
     }
 
@@ -390,7 +471,8 @@ app.get('/api/analytics/dashboard', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({
         success: false,
-        error: 'Database service unavailable'
+        error: 'Database service unavailable',
+        message: 'Supabase client not initialized. Please check your environment variables.'
       });
     }
 
@@ -458,18 +540,24 @@ app.use('*', (req, res) => {
       'POST /api/customers - Create customer',
       'GET /api/test - Database test',
       'GET /api/analytics/dashboard - Analytics dashboard'
-    ]
+    ],
+    timestamp: new Date().toISOString()
   });
 });
 
 // Global error handler
 app.use((error, req, res, next) => {
   console.error('🚨 Unhandled error:', error);
+  
+  // Don't leak error details in production
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
   res.status(500).json({
     success: false,
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : error.message,
-    timestamp: new Date().toISOString()
+    message: isDevelopment ? error.message : 'Something went wrong',
+    timestamp: new Date().toISOString(),
+    requestId: req.headers['x-request-id'] || 'unknown'
   });
 });
 
@@ -494,9 +582,17 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`🧪 Database Test: http://localhost:${PORT}/api/test`);
     console.log(`📊 Businesses: http://localhost:${PORT}/api/businesses`);
     console.log(`👥 Customers: http://localhost:${PORT}/api/customers`);
+    console.log(`📈 Analytics: http://localhost:${PORT}/api/analytics/dashboard`);
     console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🗄️ Database: ${supabase ? 'Connected ✅' : 'Disconnected ❌'}`);
     console.log('='.repeat(50));
   });
+} else {
+  // Production startup message
+  console.log('🚀 ClientFlow AI Suite API Server started in production mode');
+  console.log(`🔧 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🗄️ Database: ${supabase ? 'Connected ✅' : 'Disconnected ❌'}`);
+  console.log(`📊 Rate Limit: ${process.env.RATE_LIMIT_MAX_REQUESTS || 100} requests per 15 minutes`);
 }
 
 // Export for Vercel
